@@ -262,10 +262,15 @@ fn coord_extrema<F>(lines: &Vec<Vec<Point>>, mut coord: F) -> Option<(f64, f64)>
 }
 
 
+fn output_usage() {
+    eprintln!("Usage: fit2walking [--events] [--no-records] FITFILE...");
+}
+
+
 fn main() {
     let args: Vec<OsString> = env::args_os().collect();
     if args.len() < 2 {
-        eprintln!("Usage: fit2walking [--events] [--no-records] FITFILE...");
+        output_usage();
         process::exit(1);
     }
 
@@ -278,6 +283,12 @@ fn main() {
         } else if filename == "--no-records" {
             show_records = false;
             continue;
+        } else if filename == "--help" {
+            output_usage();
+            return;
+        } else if filename.to_string_lossy().starts_with("--") {
+            output_usage();
+            process::exit(1);
         }
 
         let mut file = File::open(filename)
