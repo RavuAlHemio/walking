@@ -1,3 +1,4 @@
+use std::convert::TryFrom;
 use std::env;
 use std::f64::consts::PI;
 use std::ffi::OsString;
@@ -29,6 +30,7 @@ struct Point {
     pub heart_rate_bpm: Option<u64>,
     pub speed_km_per_h: Option<f64>,
     pub cadence_rpm: Option<u64>,
+    pub temperature_degc: Option<i64>,
 }
 impl Point {
     pub fn new(
@@ -39,6 +41,7 @@ impl Point {
         heart_rate_bpm: Option<u64>,
         speed_km_per_h: Option<f64>,
         cadence_rpm: Option<u64>,
+        temperature_degc: Option<i64>,
     ) -> Self {
         Self {
             latitude_deg,
@@ -48,6 +51,7 @@ impl Point {
             heart_rate_bpm,
             speed_km_per_h,
             cadence_rpm,
+            temperature_degc,
         }
     }
 }
@@ -140,27 +144,41 @@ fn point_distance<P1: GeoPoint, P2: GeoPoint>(point1: &P1, point2: &P2) -> f64 {
     s
 }
 
-fn f64_avg(f1: Option<f64>, f2: Option<f64>) -> Option<serde_json::Value> {
-    let avg = match (f1, f2) {
+fn avg<T, A, J>(v1: Option<T>, v2: Option<T>, mut average: A, mut jsonify: J) -> Option<serde_json::Value>
+    where
+        A : FnMut(T, T) -> T,
+        J : FnMut(T) -> serde_json::Value,
+{
+    let avg = match (v1, v2) {
         (None, None) => None,
-        (Some(g1), None) => Some(g1),
-        (None, Some(g2)) => Some(g2),
-        (Some(g1), Some(g2)) => Some((g1 + g2)/2.0),
+        (Some(s1), None) => Some(s1),
+        (None, Some(s2)) => Some(s2),
+        (Some(s1), Some(s2)) => Some(average(s1, s2)),
     };
-    avg.map(|v|
-        serde_json::Value::Number(serde_json::Number::from_f64(v).unwrap())
+    avg.map(|v| jsonify(v))
+}
+
+fn f64_avg(f1: Option<f64>, f2: Option<f64>) -> Option<serde_json::Value> {
+    avg(
+        f1, f2,
+        |a, b| (a + b)/2.0,
+        |v| serde_json::Value::Number(serde_json::Number::from_f64(v).unwrap()),
+    )
+}
+
+fn i64_avg(i1: Option<i64>, i2: Option<i64>) -> Option<serde_json::Value> {
+    avg(
+        i1, i2,
+        |a, b| (a + b)/2,
+        |v| serde_json::Value::Number(serde_json::Number::from(v)),
     )
 }
 
 fn u64_avg(i1: Option<u64>, i2: Option<u64>) -> Option<serde_json::Value> {
-    let avg = match (i1, i2) {
-        (None, None) => None,
-        (Some(j1), None) => Some(j1),
-        (None, Some(j2)) => Some(j2),
-        (Some(j1), Some(j2)) => Some((j1 + j2)/2),
-    };
-    avg.map(|v|
-        serde_json::Value::Number(serde_json::Number::from(v))
+    avg(
+        i1, i2,
+        |a, b| (a + b)/2,
+        |v| serde_json::Value::Number(serde_json::Number::from(v)),
     )
 }
 
@@ -210,6 +228,9 @@ fn lines_to_points(lines: &Vec<Vec<Point>>) -> serde_json::Value {
             }
             if let Some(cad) = u64_avg(point1.cadence_rpm, point2.cadence_rpm) {
                 properties.insert("cadence".to_owned(), cad);
+            }
+            if let Some(temp) = i64_avg(point1.temperature_degc, point2.temperature_degc) {
+                properties.insert("temperature".to_owned(), temp);
             }
 
             let feature = serde_json::json!({
@@ -416,6 +437,16 @@ fn main() {
                 }
             }
 
+            let mut final_temperature = None;
+            let temperature_field_opt = record.fields().iter()
+                .filter(|df| df.name() == "temperature")
+                .nth(0);
+            if let Some(temperature_field) = temperature_field_opt {
+                if let fitparser::Value::SInt8(temp) = temperature_field.value() {
+                    final_temperature = Some((*temp) as i64);
+                }
+            }
+
             let point = Point::new(
                 lat_deg,
                 lon_deg,
@@ -424,6 +455,7 @@ fn main() {
                 final_heart_rate,
                 final_speed_km_per_h,
                 final_cadence,
+                final_temperature,
             );
             //println!("{:?}", point);
             line.push(point);
@@ -444,6 +476,14 @@ fn main() {
         let avg_lat = (min_lat + max_lat)/2.0;
         let avg_lon = (min_lon + max_lon)/2.0;
         let (min_ele, max_ele) = coord_extrema(&lines, |p| p.elevation_m).unwrap();
+        let (min_hr, max_hr) = coord_extrema(&lines, |p| p.heart_rate_bpm.map(|hr| hr as f64))
+            .unwrap_or((80.0, 160.0));
+        let (min_speed, max_speed) = coord_extrema(&lines, |p| p.speed_km_per_h)
+            .unwrap_or((0.0, 10.0));
+        let (min_cad, max_cad) = coord_extrema(&lines, |p| p.cadence_rpm.map(|hr| hr as f64))
+            .unwrap_or((0.0, 120.0));
+        let (min_temp, max_temp) = coord_extrema(&lines, |p| p.temperature_degc.map(|hr| hr as f64))
+            .unwrap_or((-10.0, 45.0));
 
         let final_json = serde_json::json!({
             "center": [avg_lat, avg_lon],
@@ -451,6 +491,10 @@ fn main() {
             "track": track,
             "points": points,
             "elevation_range": [min_ele, max_ele],
+            "heart_rate_range": [min_hr, max_hr],
+            "speed_range": [min_speed, max_speed],
+            "cadence_range": [min_cad, max_cad],
+            "temperature_range": [min_temp, max_temp],
         });
 
         println!("{}", serde_json::to_string_pretty(&final_json).unwrap());

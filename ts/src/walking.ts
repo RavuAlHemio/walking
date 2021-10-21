@@ -11,6 +11,10 @@ export module Walking {
         track?: geojson.FeatureCollection,
         points?: geojson.FeatureCollection,
         elevation_range?: [number, number],
+        heart_rate_range?: [number, number],
+        speed_range?: [number, number],
+        cadence_range?: [number, number],
+        temperature_range?: [number, number],
     };
 
     interface WalkingDataFeatureProperties {
@@ -19,6 +23,7 @@ export module Walking {
         elevation: number,
         running_distance: number,
         cadence?: number,
+        temperature?: number,
     };
 
     let data: WalkingData = {};
@@ -63,23 +68,34 @@ export module Walking {
         let heartRateLayer = obtainHeartRateLayer();
         let speedLayer = obtainSpeedLayer();
         let cadenceLayer = obtainCadenceLayer();
+        let temperatureLayer = obtainTemperatureLayer();
+
+        let layers = [osmLayer, trackLayer];
+        if (heartRateLayer !== null) {
+            layers.push(heartRateLayer);
+        }
 
         theMap = leaflet.map("the-map", {
             center: data.center,
             zoom: data.zoom,
-            layers: [osmLayer, trackLayer, heartRateLayer],
+            layers: layers,
         });
         let baseMaps = {
             "OSM": osmLayer,
         };
         let overlayMaps: any = {
             "track": trackLayer,
-            "heart rate": heartRateLayer,
-            "elevation": elevationLayer,
-            "speed": speedLayer,
         };
+        if (heartRateLayer !== null) {
+            overlayMaps["heart rate"] = heartRateLayer;
+        }
+        overlayMaps["elevation"] = elevationLayer;
+        overlayMaps["speed"] = speedLayer;
         if (cadenceLayer !== null) {
             overlayMaps["cadence"] = cadenceLayer;
+        }
+        if (temperatureLayer !== null) {
+            overlayMaps["temperature"] = temperatureLayer;
         }
         let layerControl = leaflet.control.layers(baseMaps, overlayMaps);
         layerControl.addTo(theMap);
@@ -89,10 +105,14 @@ export module Walking {
         return leaflet.tileLayer.provider("OpenStreetMap.Mapnik");
     }
 
-    function mixColor(value: number, minVal: number, maxVal: number): [number, number, number] {
+    function mixColor(value: number|undefined, minVal: number, maxVal: number): [number, number, number]|undefined {
         let bottomColor: [number, number, number] = [0.0, 1.0, 0.0];
         let midColor: [number, number, number] = [1.0, 1.0, 1.0];
         let topColor: [number, number, number] = [1.0, 0.0, 0.0];
+
+        if (value === undefined) {
+            return undefined;
+        }
 
         let valFactor = (value - minVal) / (maxVal - minVal);
 
@@ -121,7 +141,10 @@ export module Walking {
         return hex;
     }
 
-    function hexColor(colorTuple: [number, number, number]): string {
+    function hexColor(colorTuple: [number, number, number]|undefined): string {
+        if (colorTuple === undefined) {
+            return "#000000";
+        }
         let hexTuple = colorTuple.map(v => hexByte(Math.round(v*255)));
         return "#" + hexTuple.join("");
     }
@@ -138,6 +161,9 @@ export module Walking {
             + `<p>${(props.running_distance/1000).toFixed(3)} km distance from beginning</p>`;
         if (props.cadence !== undefined) {
             popupText += `<p>${props.cadence} RPM cadence</p>`;
+        }
+        if (props.temperature !== undefined) {
+            popupText += `<p>${props.temperature} \u00B0C</p>`;
         }
         layer.bindPopup(popupText);
     }
@@ -167,6 +193,33 @@ export module Walking {
         return [300, 400];
     }
 
+    function speedRange(): [number, number] {
+        let dataRange = data.speed_range;
+        if (dataRange !== undefined) {
+            return dataRange;
+        }
+        return [0, 10];
+    }
+
+    function haveLayer(valueFunc: (props: { [name: string]: any }) => any): boolean {
+        if (data.points === undefined) {
+            return false;
+        }
+
+        let haveValue = false;
+        for (let feature of data.points.features) {
+            if (feature.properties === null) {
+                continue;
+            }
+
+            if (valueFunc(feature.properties) !== undefined) {
+                haveValue = true;
+                break;
+            }
+        }
+        return haveValue;
+    }
+
     function obtainElevationLayer(): leaflet.GeoJSON<any> {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
@@ -178,7 +231,10 @@ export module Walking {
         });
     }
 
-    function obtainHeartRateLayer(): leaflet.GeoJSON<any> {
+    function obtainHeartRateLayer(): leaflet.GeoJSON<any>|null {
+        if (!haveLayer(props => props.heart_rate)) {
+            return null;
+        }
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
                 color: hexColor(mixColor(props.heart_rate, 80, 160)),
@@ -192,7 +248,7 @@ export module Walking {
     function obtainSpeedLayer(): leaflet.GeoJSON<any> {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
-                color: hexColor(mixColor(props.speed, 0, 10)),
+                color: hexColor(mixColor(props.speed, speedRange()[0], speedRange()[1])),
                 opacity: 1,
                 weight: 4,
             })),
@@ -201,28 +257,28 @@ export module Walking {
     }
 
     function obtainCadenceLayer(): leaflet.GeoJSON<any>|null {
-        if (data.points === undefined) {
-            return null;
-        }
-
-        let haveCadence = false;
-        for (let feature of data.points.features) {
-            if (feature.properties === null) {
-                continue;
-            }
-
-            if (feature.properties.cadence !== undefined) {
-                haveCadence = true;
-                break;
-            }
-        }
-        if (!haveCadence) {
+        if (!haveLayer(props => props.cadence)) {
             return null;
         }
 
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
-                color: hexColor(mixColor(props.speed, 0, 10)),
+                color: hexColor(mixColor(props.cadence, 0, 120)),
+                opacity: 1,
+                weight: 4,
+            })),
+            onEachFeature: popup,
+        });
+    }
+
+    function obtainTemperatureLayer(): leaflet.GeoJSON<any>|null {
+        if (!haveLayer(props => props.temperature)) {
+            return null;
+        }
+
+        return leaflet.geoJSON(data.points, {
+            style: styleFunc(props => ({
+                color: hexColor(mixColor(props.temperature, -10, 45)),
                 opacity: 1,
                 weight: 4,
             })),
