@@ -28,6 +28,7 @@ struct Point {
     pub unix_timestamp: Option<f64>,
     pub heart_rate_bpm: Option<u64>,
     pub speed_km_per_h: Option<f64>,
+    pub cadence_rpm: Option<u64>,
 }
 impl Point {
     pub fn new(
@@ -37,6 +38,7 @@ impl Point {
         unix_timestamp: Option<f64>,
         heart_rate_bpm: Option<u64>,
         speed_km_per_h: Option<f64>,
+        cadence_rpm: Option<u64>,
     ) -> Self {
         Self {
             latitude_deg,
@@ -45,6 +47,7 @@ impl Point {
             unix_timestamp,
             heart_rate_bpm,
             speed_km_per_h,
+            cadence_rpm,
         }
     }
 }
@@ -204,6 +207,9 @@ fn lines_to_points(lines: &Vec<Vec<Point>>) -> serde_json::Value {
             }
             if let Some(hr) = u64_avg(point1.heart_rate_bpm, point2.heart_rate_bpm) {
                 properties.insert("heart_rate".to_owned(), hr);
+            }
+            if let Some(cad) = u64_avg(point1.cadence_rpm, point2.cadence_rpm) {
+                properties.insert("cadence".to_owned(), cad);
             }
 
             let feature = serde_json::json!({
@@ -400,6 +406,16 @@ fn main() {
                 }
             }
 
+            let mut final_cadence = None;
+            let cadence_field_opt = record.fields().iter()
+                .filter(|df| df.name() == "cadence")
+                .nth(0);
+            if let Some(cadence_field) = cadence_field_opt {
+                if let fitparser::Value::UInt8(cad) = cadence_field.value() {
+                    final_cadence = Some((*cad) as u64);
+                }
+            }
+
             let point = Point::new(
                 lat_deg,
                 lon_deg,
@@ -407,6 +423,7 @@ fn main() {
                 final_timestamp,
                 final_heart_rate,
                 final_speed_km_per_h,
+                final_cadence,
             );
             //println!("{:?}", point);
             line.push(point);
