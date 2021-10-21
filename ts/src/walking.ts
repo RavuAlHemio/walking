@@ -26,6 +26,8 @@ export module Walking {
         temperature?: number,
     };
 
+    type ColorTriplet = [number, number, number];
+
     let data: WalkingData = {};
     let theMap: leaflet.Map;
 
@@ -105,11 +107,7 @@ export module Walking {
         return leaflet.tileLayer.provider("OpenStreetMap.Mapnik");
     }
 
-    function mixColor(value: number|undefined, minVal: number, maxVal: number): [number, number, number]|undefined {
-        let bottomColor: [number, number, number] = [0.0, 1.0, 0.0];
-        let midColor: [number, number, number] = [1.0, 1.0, 1.0];
-        let topColor: [number, number, number] = [1.0, 0.0, 0.0];
-
+    function mixColor(value: number|undefined, minVal: number, maxVal: number, bottomColor: ColorTriplet, midColor: ColorTriplet, topColor: ColorTriplet): ColorTriplet|undefined {
         if (value === undefined) {
             return undefined;
         }
@@ -131,6 +129,30 @@ export module Walking {
             return topColor;
         }
         return color;
+    }
+
+    // green-white-red
+    function mixColorGWR(value: number|undefined, minVal: number, maxVal: number): ColorTriplet|undefined {
+        let bottomColor: ColorTriplet = [0.0, 1.0, 0.0];
+        let midColor: ColorTriplet = [1.0, 1.0, 1.0];
+        let topColor: ColorTriplet = [1.0, 0.0, 0.0];
+        return mixColor(value, minVal, maxVal, bottomColor, midColor, topColor);
+    }
+
+    // blue-white-red
+    function mixColorBWR(value: number|undefined, minVal: number, maxVal: number): ColorTriplet|undefined {
+        let bottomColor: ColorTriplet = [0.0, 0.0, 1.0];
+        let midColor: ColorTriplet = [1.0, 1.0, 1.0];
+        let topColor: ColorTriplet = [1.0, 0.0, 0.0];
+        return mixColor(value, minVal, maxVal, bottomColor, midColor, topColor);
+    }
+
+    // brown-white
+    function mixColorBW(value: number|undefined, minVal: number, maxVal: number): ColorTriplet|undefined {
+        let bottomColor: ColorTriplet = [0.4, 0.2, 0.0];
+        let midColor: ColorTriplet = [0.7, 0.6, 0.5];
+        let topColor: ColorTriplet = [1.0, 1.0, 1.0];
+        return mixColor(value, minVal, maxVal, bottomColor, midColor, topColor);
     }
 
     function hexByte(val: number): string {
@@ -223,7 +245,7 @@ export module Walking {
     function obtainElevationLayer(): leaflet.GeoJSON<any> {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
-                color: hexColor(mixColor(props.elevation, elevationRange()[0], elevationRange()[1])),
+                color: hexColor(mixColorBW(props.elevation, elevationRange()[0], elevationRange()[1])),
                 opacity: 1,
                 weight: 4,
             })),
@@ -237,7 +259,7 @@ export module Walking {
         }
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
-                color: hexColor(mixColor(props.heart_rate, 80, 160)),
+                color: hexColor(mixColorGWR(props.heart_rate, 80, 160)),
                 opacity: 1,
                 weight: 8,
             })),
@@ -248,7 +270,7 @@ export module Walking {
     function obtainSpeedLayer(): leaflet.GeoJSON<any> {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
-                color: hexColor(mixColor(props.speed, speedRange()[0], speedRange()[1])),
+                color: hexColor(mixColorGWR(props.speed, speedRange()[0], speedRange()[1])),
                 opacity: 1,
                 weight: 4,
             })),
@@ -263,7 +285,7 @@ export module Walking {
 
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
-                color: hexColor(mixColor(props.cadence, 0, 120)),
+                color: hexColor(mixColorGWR(props.cadence, 0, 120)),
                 opacity: 1,
                 weight: 4,
             })),
@@ -278,7 +300,7 @@ export module Walking {
 
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
-                color: hexColor(mixColor(props.temperature, -10, 45)),
+                color: hexColor(mixColorBWR(props.temperature, -10, 45)),
                 opacity: 1,
                 weight: 4,
             })),
