@@ -8,8 +8,8 @@ export module Walking {
     interface WalkingData {
         center?: [number, number],
         zoom?: number,
-        track?: geojson.Feature,
-        points?: geojson.Feature,
+        track?: geojson.FeatureCollection,
+        points?: geojson.FeatureCollection,
         elevation_range?: [number, number],
     };
 
@@ -18,6 +18,7 @@ export module Walking {
         heart_rate: number,
         elevation: number,
         running_distance: number,
+        cadence?: number,
     };
 
     let data: WalkingData = {};
@@ -61,6 +62,7 @@ export module Walking {
         let elevationLayer = obtainElevationLayer();
         let heartRateLayer = obtainHeartRateLayer();
         let speedLayer = obtainSpeedLayer();
+        let cadenceLayer = obtainCadenceLayer();
 
         theMap = leaflet.map("the-map", {
             center: data.center,
@@ -70,12 +72,15 @@ export module Walking {
         let baseMaps = {
             "OSM": osmLayer,
         };
-        let overlayMaps = {
+        let overlayMaps: any = {
             "track": trackLayer,
             "heart rate": heartRateLayer,
             "elevation": elevationLayer,
             "speed": speedLayer,
         };
+        if (cadenceLayer !== null) {
+            overlayMaps["cadence"] = cadenceLayer;
+        }
         let layerControl = leaflet.control.layers(baseMaps, overlayMaps);
         layerControl.addTo(theMap);
     }
@@ -126,15 +131,18 @@ export module Walking {
         if (props === null) {
             return;
         }
-        layer.bindPopup(
-            `<p>${props.speed.toFixed(1)} km/h</p>`
+        let popupText
+            = `<p>${props.speed.toFixed(1)} km/h</p>`
             + `<p>${props.heart_rate} BPM</p>`
             + `<p>${props.elevation.toFixed(1)} m ASL</p>`
-            + `<p>${(props.running_distance/1000).toFixed(3)} km distance from beginning</p>`
-        );
+            + `<p>${(props.running_distance/1000).toFixed(3)} km distance from beginning</p>`;
+        if (props.cadence !== undefined) {
+            popupText += `<p>${props.cadence} RPM cadence</p>`;
+        }
+        layer.bindPopup(popupText);
     }
 
-    function obtainTrackLayer() {
+    function obtainTrackLayer(): leaflet.GeoJSON<any> {
         return leaflet.geoJSON(data.track, {});
     }
 
@@ -159,7 +167,7 @@ export module Walking {
         return [300, 400];
     }
 
-    function obtainElevationLayer() {
+    function obtainElevationLayer(): leaflet.GeoJSON<any> {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
                 color: hexColor(mixColor(props.elevation, elevationRange()[0], elevationRange()[1])),
@@ -170,7 +178,7 @@ export module Walking {
         });
     }
 
-    function obtainHeartRateLayer() {
+    function obtainHeartRateLayer(): leaflet.GeoJSON<any> {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
                 color: hexColor(mixColor(props.heart_rate, 80, 160)),
@@ -181,7 +189,37 @@ export module Walking {
         });
     }
 
-    function obtainSpeedLayer() {
+    function obtainSpeedLayer(): leaflet.GeoJSON<any> {
+        return leaflet.geoJSON(data.points, {
+            style: styleFunc(props => ({
+                color: hexColor(mixColor(props.speed, 0, 10)),
+                opacity: 1,
+                weight: 4,
+            })),
+            onEachFeature: popup,
+        });
+    }
+
+    function obtainCadenceLayer(): leaflet.GeoJSON<any>|null {
+        if (data.points === undefined) {
+            return null;
+        }
+
+        let haveCadence = false;
+        for (let feature of data.points.features) {
+            if (feature.properties === null) {
+                continue;
+            }
+
+            if (feature.properties.cadence !== undefined) {
+                haveCadence = true;
+                break;
+            }
+        }
+        if (!haveCadence) {
+            return null;
+        }
+
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
                 color: hexColor(mixColor(props.speed, 0, 10)),
