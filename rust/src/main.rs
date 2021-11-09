@@ -1,11 +1,13 @@
-use std::convert::TryFrom;
 use std::env;
 use std::f64::consts::PI;
 use std::ffi::OsString;
 use std::fs::File;
 use std::process;
+
+use chrono::{DateTime, Local, TimeZone};
 use fitparser;
 use fitparser::profile::MesgNum;
+use serde_json;
 
 
 trait GeoPoint {
@@ -31,6 +33,7 @@ struct Point {
     pub speed_km_per_h: Option<f64>,
     pub cadence_rpm: Option<u64>,
     pub temperature_degc: Option<i64>,
+    pub timestamp: Option<DateTime<Local>>,
 }
 impl Point {
     pub fn new(
@@ -42,6 +45,7 @@ impl Point {
         speed_km_per_h: Option<f64>,
         cadence_rpm: Option<u64>,
         temperature_degc: Option<i64>,
+        timestamp: Option<DateTime<Local>>,
     ) -> Self {
         Self {
             latitude_deg,
@@ -52,6 +56,7 @@ impl Point {
             speed_km_per_h,
             cadence_rpm,
             temperature_degc,
+            timestamp,
         }
     }
 }
@@ -182,6 +187,14 @@ fn u64_avg(i1: Option<u64>, i2: Option<u64>) -> Option<serde_json::Value> {
     )
 }
 
+fn time_avg(t1: Option<DateTime<Local>>, t2: Option<DateTime<Local>>) -> Option<serde_json::Value> {
+    avg(
+        t1, t2,
+        |a, b| Local.timestamp((a.timestamp() + b.timestamp()) / 2, 0),
+        |v| serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string()),
+    )
+}
+
 fn lines_to_track(lines: &Vec<Vec<Point>>) -> serde_json::Value {
     let mut features = Vec::new();
     for line in lines {
@@ -231,6 +244,9 @@ fn lines_to_points(lines: &Vec<Vec<Point>>) -> serde_json::Value {
             }
             if let Some(temp) = i64_avg(point1.temperature_degc, point2.temperature_degc) {
                 properties.insert("temperature".to_owned(), temp);
+            }
+            if let Some(time) = time_avg(point1.timestamp, point2.timestamp) {
+                properties.insert("timestamp".to_owned(), time);
             }
 
             let feature = serde_json::json!({
@@ -447,6 +463,16 @@ fn main() {
                 }
             }
 
+            let mut final_time = None;
+            let time_field_opt = record.fields().iter()
+                .filter(|df| df.name() == "timestamp")
+                .nth(0);
+            if let Some(time_field) = time_field_opt {
+                if let fitparser::Value::Timestamp(ts) = time_field.value() {
+                    final_time = Some(*ts);
+                }
+            }
+
             let point = Point::new(
                 lat_deg,
                 lon_deg,
@@ -456,6 +482,7 @@ fn main() {
                 final_speed_km_per_h,
                 final_cadence,
                 final_temperature,
+                final_time,
             );
             //println!("{:?}", point);
             line.push(point);
