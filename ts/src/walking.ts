@@ -18,12 +18,13 @@ export module Walking {
     };
 
     interface WalkingDataFeatureProperties {
-        speed: number,
-        heart_rate: number,
-        elevation: number,
-        running_distance: number,
+        speed?: number,
+        heart_rate?: number,
+        elevation?: number,
+        running_distance?: number,
         cadence?: number,
         temperature?: number,
+        timestamp?: string,
     };
 
     type ColorTriplet = [number, number, number];
@@ -176,16 +177,27 @@ export module Walking {
         if (props === null) {
             return;
         }
-        let popupText
-            = `<p>${props.speed.toFixed(1)} km/h</p>`
-            + `<p>${props.heart_rate} BPM</p>`
-            + `<p>${props.elevation.toFixed(1)} m ASL</p>`
-            + `<p>${(props.running_distance/1000).toFixed(3)} km distance from beginning</p>`;
+        let popupText = "";
+        if (props.speed !== undefined) {
+            popupText += `<p>${props.speed.toFixed(1)} km/h</p>`;
+        }
+        if (props.heart_rate !== undefined) {
+            popupText += `<p>${props.heart_rate} BPM</p>`;
+        }
+        if (props.elevation !== undefined) {
+            popupText += `<p>${props.elevation.toFixed(1)} m ASL</p>`;
+        }
+        if (props.running_distance !== undefined) {
+            popupText += `<p>${(props.running_distance/1000).toFixed(3)} km distance from beginning</p>`;
+        }
         if (props.cadence !== undefined) {
             popupText += `<p>${props.cadence} RPM cadence</p>`;
         }
         if (props.temperature !== undefined) {
             popupText += `<p>${props.temperature} \u00B0C</p>`;
+        }
+        if (props.timestamp !== undefined) {
+            popupText += `<p>${props.timestamp}</p>`;
         }
         layer.bindPopup(popupText);
     }
