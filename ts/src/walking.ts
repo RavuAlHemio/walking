@@ -65,7 +65,7 @@ export module Walking {
         data = JSON.parse(xhr.responseText);
 
         // set up Leaflet
-        let osmLayer = obtainOsmLayer();
+        let baseLayers = obtainBaseLayers();
         let trackLayer = obtainTrackLayer();
         let elevationLayer = obtainElevationLayer();
         let heartRateLayer = obtainHeartRateLayer();
@@ -73,7 +73,7 @@ export module Walking {
         let cadenceLayer = obtainCadenceLayer();
         let temperatureLayer = obtainTemperatureLayer();
 
-        let layers = [osmLayer, trackLayer];
+        let layers: leaflet.Layer[] = baseLayers.map(nameAndLayer => nameAndLayer[1]);
         if (heartRateLayer !== null) {
             layers.push(heartRateLayer);
         }
@@ -83,9 +83,10 @@ export module Walking {
             zoom: data.zoom,
             layers: layers,
         });
-        let baseMaps = {
-            "OSM": osmLayer,
-        };
+        let baseMaps: any = {};
+        for (let nameAndLayer of baseLayers) {
+            baseMaps[nameAndLayer[0]] = nameAndLayer[1];
+        }
         let overlayMaps: any = {
             "track": trackLayer,
         };
@@ -104,8 +105,11 @@ export module Walking {
         layerControl.addTo(theMap);
     }
 
-    function obtainOsmLayer(): leaflet.TileLayer.Provider {
-        return leaflet.tileLayer.provider("OpenStreetMap.Mapnik");
+    function obtainBaseLayers(): [string, leaflet.TileLayer.Provider][] {
+        return [
+            ["OSM", leaflet.tileLayer.provider("OpenStreetMap.Mapnik")],
+            ["CyclOSM", leaflet.tileLayer.provider("CyclOSM")],
+        ];
     }
 
     function mixColor(value: number|undefined, minVal: number, maxVal: number, bottomColor: ColorTriplet, midColor: ColorTriplet, topColor: ColorTriplet): ColorTriplet|undefined {
