@@ -108,7 +108,9 @@ export module Walking {
     function obtainBaseLayers(): [string, leaflet.TileLayer.Provider][] {
         return [
             ["OSM", leaflet.tileLayer.provider("OpenStreetMap.Mapnik")],
+            ["OSM (Translucent)", leaflet.tileLayer.provider("OpenStreetMap.Mapnik", { opacity: 0.5 })],
             ["CyclOSM", leaflet.tileLayer.provider("CyclOSM")],
+            ["CyclOSM (Translucent)", leaflet.tileLayer.provider("CyclOSM", { opacity: 0.5 })],
         ];
     }
 
