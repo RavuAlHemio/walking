@@ -1,23 +1,24 @@
-use std::env;
-use std::f64::consts::PI;
-use std::ffi::OsString;
 use std::fs::File;
-use std::process;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, TimeZone};
+use clap::Parser;
 use fitparser;
 use fitparser::profile::MesgNum;
+use geo;
+use geo::prelude::Contains;
+use geo::vincenty_distance::VincentyDistance;
 use serde_json;
 
 
 trait GeoPoint {
-    fn latitude_deg(&self) -> f64;
-    fn longitude_deg(&self) -> f64;
-
+    fn latitude(&self) -> f64;
+    fn longitude(&self) -> f64;
     fn as_lonlat_list(&self) -> serde_json::Value {
         serde_json::json!([
-            self.longitude_deg(),
-            self.latitude_deg(),
+            self.longitude(),
+            self.latitude(),
         ])
     }
 }
@@ -25,8 +26,7 @@ trait GeoPoint {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Point {
-    pub latitude_deg: f64,
-    pub longitude_deg: f64,
+    pub coordinates_deg: geo::Point<f64>,
     pub elevation_m: Option<f64>,
     pub unix_timestamp: Option<f64>,
     pub heart_rate_bpm: Option<u64>,
@@ -37,8 +37,7 @@ struct Point {
 }
 impl Point {
     pub fn new(
-        latitude_deg: f64,
-        longitude_deg: f64,
+        coordinates_deg: geo::Point<f64>,
         elevation_m: Option<f64>,
         unix_timestamp: Option<f64>,
         heart_rate_bpm: Option<u64>,
@@ -48,8 +47,7 @@ impl Point {
         timestamp: Option<DateTime<Local>>,
     ) -> Self {
         Self {
-            latitude_deg,
-            longitude_deg,
+            coordinates_deg,
             elevation_m,
             unix_timestamp,
             heart_rate_bpm,
@@ -62,91 +60,14 @@ impl Point {
 }
 impl GeoPoint for Point {
     #[inline]
-    fn latitude_deg(&self) -> f64 {
-        self.latitude_deg
+    fn latitude(&self) -> f64 {
+        self.coordinates_deg.y()
     }
 
     #[inline]
-    fn longitude_deg(&self) -> f64 {
-        self.longitude_deg
+    fn longitude(&self) -> f64 {
+        self.coordinates_deg.x()
     }
-}
-
-fn point_distance<P1: GeoPoint, P2: GeoPoint>(point1: &P1, point2: &P2) -> f64 {
-    let lat1_rad = point1.latitude_deg() * PI / 180.0;
-    let lat2_rad = point2.latitude_deg() * PI / 180.0;
-    let lon1_rad = point1.longitude_deg() * PI / 180.0;
-    let lon2_rad = point2.longitude_deg() * PI / 180.0;
-
-    // "borrowed" wholesale from Wikipedia (Vincenty's formulae)
-    let a = 6378137.0; // WGS-84 length of semi-major axis
-    let f = 1.0/298.257223563; // WGS-84 flattening
-    let b = (1.0 - f) * a; // WGS-84 length of semi-minor axis
-
-    let U1 = f64::atan((1.0 - f) * lat1_rad.tan());
-    let U2 = f64::atan((1.0 - f) * lat2_rad.tan());
-    let L = lon2_rad - lon1_rad;
-
-    let epsilon = 0.1;
-    let mut sin_sigma = f64::NAN;
-    let mut cos_sigma = f64::NAN;
-    let mut sigma = f64::NAN;
-    let mut cos2_alpha = f64::NAN;
-    let mut cos_2sigmam = f64::NAN;
-
-    let mut lambda = L;
-    for _ in 0..16 {
-        let prev_lambda = lambda;
-        sin_sigma = (
-            (U2.cos() * lambda.sin()).powi(2)
-            + (U1.cos() * U2.sin() - U1.sin() * U2.cos() * lambda.cos()).powi(2)
-        ).sqrt();
-        cos_sigma = U1.sin() * U2.sin() + U1.cos() * U2.cos() * lambda.cos();
-        sigma = sin_sigma.atan2(cos_sigma);
-        let sin_alpha = U1.cos() * U2.cos() * lambda.sin() / sin_sigma;
-        cos2_alpha = 1.0 - sin_alpha.powi(2);
-        cos_2sigmam = cos_sigma - 2.0 * U1.sin() * U2.sin() / cos2_alpha;
-        let C = f / 16.0 * cos2_alpha * (
-            4.0 + f * (
-                4.0 - 3.0 * cos2_alpha
-            )
-        );
-        lambda = L + (1.0 - C) * f * sin_alpha * (
-            sigma + C * sin_sigma * (
-                cos_2sigmam + C * cos_sigma * (
-                    -1.0 + 2.0 * cos_2sigmam.powi(2)
-                )
-            )
-        );
-        if (lambda - prev_lambda).abs() < epsilon {
-            break;
-        }
-    }
-
-    let u_2 = cos2_alpha * (a.powi(2) - b.powi(2)) / b.powi(2);
-    let A = 1.0 + u_2 / 16384.0 * (
-        4096.0 + u_2 * (
-            -768.0 + u_2 * (
-                320.0 - 175.0 * u_2
-            )
-        )
-    );
-    let B = u_2 / 1024.0 * (
-        256.0 + u_2 * (
-            -128.0 + u_2 * (
-                74.0 - 47.0 * u_2
-            )
-        )
-    );
-    let delta_sigma = B * sin_sigma * (
-        cos_2sigmam + 1.0/4.0 * B * (
-            cos_sigma * (-1.0 + 2.0 * cos_2sigmam.powi(2))
-            - B / 6.0 * cos_2sigmam * (-3.0 + 4.0 * sin_sigma.powi(2)) * (-3.0 + 4.0 * cos_2sigmam.powi(2))
-        )
-    );
-    let s = b * A * (sigma - delta_sigma);
-
-    s
 }
 
 fn avg<T, A, J>(v1: Option<T>, v2: Option<T>, mut average: A, mut jsonify: J) -> Option<serde_json::Value>
@@ -200,7 +121,7 @@ fn lines_to_track(lines: &Vec<Vec<Point>>) -> serde_json::Value {
     for line in lines {
         let coordinates: Vec<serde_json::Value> = line
             .iter()
-            .map(|p| serde_json::json!([p.longitude_deg, p.latitude_deg]))
+            .map(|p| serde_json::json!([p.longitude(), p.latitude()]))
             .collect();
         let json_line = serde_json::json!({
             "type": "Feature",
@@ -225,7 +146,8 @@ fn lines_to_points(lines: &Vec<Vec<Point>>) -> serde_json::Value {
         for i in 0..line.len()-1 {
             let point1 = &line[i];
             let point2 = &line[i+1];
-            let dist_m = point_distance(point1, point2);
+            let dist_m = point1.coordinates_deg.vincenty_distance(&point2.coordinates_deg)
+                .expect("distance calculation failed to converge");
             running_dist_m += dist_m;
 
             let mut properties = serde_json::Map::new();
@@ -305,43 +227,73 @@ fn coord_extrema<F>(lines: &Vec<Vec<Point>>, mut coord: F) -> Option<(f64, f64)>
 }
 
 
-fn output_usage() {
-    eprintln!("Usage: fit2walking [--events] [--no-records] FITFILE...");
+fn load_censor_polygon(path: &Path) -> geo::Polygon<f64> {
+    let buf = {
+        let mut file = File::open(path)
+            .expect("failed to open polygon file");
+        let mut buf = String::new();
+        file.read_to_string(&mut buf)
+            .expect("failed to read polygon file");
+        buf
+    };
+
+    let mut points = Vec::new();
+    for (i, mut line) in buf.split('\n').enumerate() {
+        if let Some(hash_index) = line.find('#') {
+            line = &line[..hash_index];
+        }
+        line = line.trim();
+
+        if line.len() == 0 {
+            // empty line (or comment only)
+            continue;
+        }
+
+        let coord_pieces: Vec<&str> = line.split_whitespace().collect();
+        if coord_pieces.len() != 2 {
+            panic!("line {}: {} coordinate pieces; expected 2", i+1, coord_pieces.len());
+        }
+
+        let lat: f64 = match coord_pieces[0].replace("_", "").parse() {
+            Ok(l) => l,
+            Err(e) => panic!("line {}: failed to parse {:?} as a latitude: {}", i + 1, coord_pieces[0], e),
+        };
+        let lon: f64 = match coord_pieces[1].replace("_", "").parse() {
+            Ok(l) => l,
+            Err(e) => panic!("line {}: failed to parse {:?} as a longitude: {}", i + 1, coord_pieces[1], e),
+        };
+        points.push(geo::Coordinate { x: lon, y: lat });
+    }
+
+    geo::Polygon::new(geo::LineString::from(points), vec![])
+}
+
+
+#[derive(Clone, Debug, Eq, Hash, Parser, PartialEq)]
+struct Opts {
+    #[clap(short, long)] pub events: bool,
+    #[clap(short, long)] pub no_records: bool,
+    #[clap(short, long = "censor-polygon", multiple_occurrences = true, multiple_values = false)] pub censor_polygons: Vec<PathBuf>,
+    #[clap(required = true)] pub filenames: Vec<PathBuf>,
 }
 
 
 fn main() {
-    let args: Vec<OsString> = env::args_os().collect();
-    if args.len() < 2 {
-        output_usage();
-        process::exit(1);
-    }
+    let opts = Opts::parse();
 
-    let mut output_events = false;
-    let mut show_records = true;
-    for filename in args.iter().skip(1) {
-        if filename == "--events" {
-            output_events = true;
-            continue;
-        } else if filename == "--no-records" {
-            show_records = false;
-            continue;
-        } else if filename == "--help" {
-            output_usage();
-            return;
-        } else if filename.to_string_lossy().starts_with("--") {
-            output_usage();
-            process::exit(1);
-        }
-
+    for filename in &opts.filenames {
         let mut file = File::open(filename)
             .expect("failed to open file");
 
         let mut lines = Vec::new();
         let mut line = Vec::new();
 
+        let censor_polygons: Vec<geo::Polygon<f64>> = opts.censor_polygons.iter()
+            .map(|cp| load_censor_polygon(cp))
+            .collect();
+
         for record in fitparser::from_reader(&mut file).expect("failed to read file") {
-            if output_events && (show_records || record.kind() != MesgNum::Record) {
+            if opts.events && (!opts.no_records || record.kind() != MesgNum::Record) {
                 eprintln!("{:?}", record.kind());
                 for field in record.fields() {
                     eprintln!("  {}[{}] = {:?} {}", field.name(), field.number(), field.value(), field.units());
@@ -399,6 +351,12 @@ fn main() {
 
             let lat_deg = semicircle_value_to_degrees(lat_semicirc.value());
             let lon_deg = semicircle_value_to_degrees(lon_semicirc.value());
+            let coords_deg = geo::Coordinate { x: lon_deg, y: lat_deg };
+
+            if censor_polygons.iter().any(|cp| cp.contains(&coords_deg)) {
+                // skip this point; it is censored
+                continue;
+            }
 
             let mut final_timestamp = None;
             let timestamp_field_opt = record.fields().iter()
@@ -474,8 +432,7 @@ fn main() {
             }
 
             let point = Point::new(
-                lat_deg,
-                lon_deg,
+                geo::Point::from((lon_deg, lat_deg)),
                 final_altitude,
                 final_timestamp,
                 final_heart_rate,
@@ -498,8 +455,8 @@ fn main() {
         let points = lines_to_points(&lines);
 
         // find coordinate extrema (assume we never go over the 180° meridian)
-        let (min_lat, max_lat) = coord_extrema(&lines, |p| Some(p.latitude_deg)).unwrap();
-        let (min_lon, max_lon) = coord_extrema(&lines, |p| Some(p.longitude_deg)).unwrap();
+        let (min_lat, max_lat) = coord_extrema(&lines, |p| Some(p.latitude())).unwrap();
+        let (min_lon, max_lon) = coord_extrema(&lines, |p| Some(p.longitude())).unwrap();
         let avg_lat = (min_lat + max_lat)/2.0;
         let avg_lon = (min_lon + max_lon)/2.0;
         let (min_ele, max_ele) = coord_extrema(&lines, |p| p.elevation_m).unwrap();
