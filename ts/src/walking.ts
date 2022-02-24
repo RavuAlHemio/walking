@@ -5,6 +5,9 @@ import * as leaflet from "leaflet";
 import "leaflet-providers";
 
 export module Walking {
+    const LINE_OPACITY: number = 1;
+    const LINE_WIDTH: number = 8;
+
     interface WalkingData {
         center?: [number, number],
         zoom?: number,
@@ -210,7 +213,13 @@ export module Walking {
     }
 
     function obtainTrackLayer(): leaflet.GeoJSON<any> {
-        return leaflet.geoJSON(data.track, {});
+        return leaflet.geoJSON(data.track, {
+            style: styleFunc(_props => ({
+                opacity: LINE_OPACITY,
+                weight: LINE_WIDTH,
+            })),
+            onEachFeature: popup,
+        });
     }
 
     function styleFunc(innerFunc: (props: WalkingDataFeatureProperties) => leaflet.PathOptions): leaflet.StyleFunction<geojson.GeoJsonProperties> {
@@ -265,8 +274,8 @@ export module Walking {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
                 color: hexColor(mixColorBW(props.elevation, elevationRange()[0], elevationRange()[1])),
-                opacity: 1,
-                weight: 4,
+                opacity: LINE_OPACITY,
+                weight: LINE_WIDTH,
             })),
             onEachFeature: popup,
         });
@@ -279,8 +288,8 @@ export module Walking {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
                 color: hexColor(mixColorGWR(props.heart_rate, 80, 160)),
-                opacity: 1,
-                weight: 8,
+                opacity: LINE_OPACITY,
+                weight: LINE_WIDTH,
             })),
             onEachFeature: popup,
         });
@@ -290,8 +299,8 @@ export module Walking {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
                 color: hexColor(mixColorGWR(props.speed, speedRange()[0], speedRange()[1])),
-                opacity: 1,
-                weight: 4,
+                opacity: LINE_OPACITY,
+                weight: LINE_WIDTH,
             })),
             onEachFeature: popup,
         });
@@ -305,8 +314,8 @@ export module Walking {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
                 color: hexColor(mixColorGWR(props.cadence, 0, 120)),
-                opacity: 1,
-                weight: 4,
+                opacity: LINE_OPACITY,
+                weight: LINE_WIDTH,
             })),
             onEachFeature: popup,
         });
@@ -320,8 +329,8 @@ export module Walking {
         return leaflet.geoJSON(data.points, {
             style: styleFunc(props => ({
                 color: hexColor(mixColorBWR(props.temperature, -10, 45)),
-                opacity: 1,
-                weight: 4,
+                opacity: LINE_OPACITY,
+                weight: LINE_WIDTH,
             })),
             onEachFeature: popup,
         });
