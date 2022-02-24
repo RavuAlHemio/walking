@@ -14,6 +14,7 @@ module.exports = [
         output: {
             filename: "walking.js",
             path: path.join(__dirname, "dist"),
+            hashFunction: "sha256",
         },
         plugins: [
             new CleanWebpackPlugin({
