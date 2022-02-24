@@ -73,7 +73,8 @@ export module Walking {
         let cadenceLayer = obtainCadenceLayer();
         let temperatureLayer = obtainTemperatureLayer();
 
-        let layers: leaflet.Layer[] = baseLayers.map(nameAndLayer => nameAndLayer[1]);
+        // take the first layer in the base layer list by default
+        let layers: leaflet.Layer[] = [baseLayers[0][1]];
         if (heartRateLayer !== null) {
             layers.push(heartRateLayer);
         }
