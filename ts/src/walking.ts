@@ -80,6 +80,8 @@ export module Walking {
         let layers: leaflet.Layer[] = [baseLayers[0][1]];
         if (heartRateLayer !== null) {
             layers.push(heartRateLayer);
+        } else {
+            layers.push(trackLayer);
         }
 
         theMap = leaflet.map("the-map", {
