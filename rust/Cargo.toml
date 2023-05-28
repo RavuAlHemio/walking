@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 chrono = { version = "0.4" }
-clap = { version = "3.0.0-rc.7", features = ["derive"] }
-fitparser = { version = "0.4" }
-geo = { version = "0.18" }
+clap = { version = "4.3", features = ["derive"] }
+fitparser = { version = "0.5" }
+geo = { version = "0.25" }
 serde_json = { version = "1.0" }

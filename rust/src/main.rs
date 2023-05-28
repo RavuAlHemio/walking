@@ -111,7 +111,7 @@ fn u64_avg(i1: Option<u64>, i2: Option<u64>) -> Option<serde_json::Value> {
 fn time_avg(t1: Option<DateTime<Local>>, t2: Option<DateTime<Local>>) -> Option<serde_json::Value> {
     avg(
         t1, t2,
-        |a, b| Local.timestamp((a.timestamp() + b.timestamp()) / 2, 0),
+        |a, b| Local.timestamp_opt((a.timestamp() + b.timestamp()) / 2, 0).unwrap(),
         |v| serde_json::Value::String(v.format("%Y-%m-%d %H:%M:%S").to_string()),
     )
 }
@@ -262,7 +262,7 @@ fn load_censor_polygon(path: &Path) -> geo::Polygon<f64> {
             Ok(l) => l,
             Err(e) => panic!("line {}: failed to parse {:?} as a longitude: {}", i + 1, coord_pieces[1], e),
         };
-        points.push(geo::Coordinate { x: lon, y: lat });
+        points.push(geo::Coord { x: lon, y: lat });
     }
 
     geo::Polygon::new(geo::LineString::from(points), vec![])
@@ -271,10 +271,10 @@ fn load_censor_polygon(path: &Path) -> geo::Polygon<f64> {
 
 #[derive(Clone, Debug, Eq, Hash, Parser, PartialEq)]
 struct Opts {
-    #[clap(short, long)] pub events: bool,
-    #[clap(short, long)] pub no_records: bool,
-    #[clap(short, long = "censor-polygon", multiple_occurrences = true, multiple_values = false)] pub censor_polygons: Vec<PathBuf>,
-    #[clap(required = true)] pub filenames: Vec<PathBuf>,
+    #[arg(short, long)] pub events: bool,
+    #[arg(short, long)] pub no_records: bool,
+    #[arg(short, long = "censor-polygon")] pub censor_polygons: Vec<PathBuf>,
+    #[arg(required = true)] pub filenames: Vec<PathBuf>,
 }
 
 
@@ -351,7 +351,7 @@ fn main() {
 
             let lat_deg = semicircle_value_to_degrees(lat_semicirc.value());
             let lon_deg = semicircle_value_to_degrees(lon_semicirc.value());
-            let coords_deg = geo::Coordinate { x: lon_deg, y: lat_deg };
+            let coords_deg = geo::Coord { x: lon_deg, y: lat_deg };
 
             if censor_polygons.iter().any(|cp| cp.contains(&coords_deg)) {
                 // skip this point; it is censored
