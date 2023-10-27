@@ -273,6 +273,7 @@ fn load_censor_polygon(path: &Path) -> geo::Polygon<f64> {
 struct Opts {
     #[arg(short, long)] pub events: bool,
     #[arg(short, long)] pub no_records: bool,
+    #[arg(short = 'O', long)] pub output_as_files: bool,
     #[arg(short, long = "censor-polygon")] pub censor_polygons: Vec<PathBuf>,
     #[arg(required = true)] pub filenames: Vec<PathBuf>,
 }
@@ -480,7 +481,14 @@ fn main() {
             "cadence_range": [min_cad, max_cad],
             "temperature_range": [min_temp, max_temp],
         });
+        let final_string = serde_json::to_string_pretty(&final_json).unwrap();
 
-        println!("{}", serde_json::to_string_pretty(&final_json).unwrap());
+        if opts.output_as_files {
+            let mut output_filename = filename.clone();
+            output_filename.set_extension("json");
+            std::fs::write(&output_filename, &final_string).unwrap();
+        } else {
+            println!("{}", final_string);
+        }
     }
 }
